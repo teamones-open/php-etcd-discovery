@@ -1,0 +1,22 @@
+{
+    "name": "teamones/etcd_discovery",
+    "description": "Teamones框架Etcd服务注册和发现组件",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Weijer Cheng",
+            "email": "weiwei163@foxmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.2.0",
+        "workerman/workerman": "^4.0.4",
+        "yurunsoft/yurun-http": "~3.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "teamones\\etcd\\": "src/"
+        }
+    }
+}
