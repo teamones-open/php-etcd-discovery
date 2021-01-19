@@ -55,15 +55,15 @@ class Registry
      * @param int $serverPort
      * @return array
      */
-    public function generateParam($serverName = '', $serverPort = 8080)
+    public function generateParam($serverName = '', $serverPort = "8080")
     {
         // etcd 地址
         $this->serverInfo['etcd_host'] = self::$serverEtcdHost;
 
         $this->serverInfo['param'] = json_encode([
-            'uuid' => self::$serverUUID,
-            'name' => $serverName,
-            'port' => $serverPort
+            'uuid' => (string)self::$serverUUID,
+            'name' => (string)$serverName,
+            'port' => (string)$serverPort
         ]);
 
         return $this->serverInfo;

@@ -97,22 +97,33 @@ class Etcd
      */
     protected function wsOnMessage(AsyncTcpConnection $connection, $data)
     {
+        if ($data === "PONG") {
+            return;
+        }
+
         $dataArr = json_decode($data, true);
-        if (isset($dataArr['code']) && $dataArr['code'] > 0) {
-            // 正常返回
-            switch ($dataArr['code']) {
-                case 'register':
-                    // 注册成功开启服务发现定时任务
-                    $this->serviceDiscovery($connection);
-                    break;
-                case 'discovery':
-                    // 服务发现返回数据写入Cache
-                    Discovery::instance()->refreshCache($dataArr['data']['server_name'], $dataArr['data']);
-                    break;
+
+        if (is_array($dataArr)) {
+            if ($dataArr['code'] > 0) {
+                // 正常返回
+                switch ($dataArr['method']) {
+                    case 'register':
+                        // 注册成功开启服务发现定时任务
+                        $this->serviceDiscovery($connection);
+                        break;
+                    case 'discovery':
+                        // 服务发现返回数据写入Cache
+                        Discovery::instance()->refreshCache($dataArr['data']['server_name'], $dataArr['data']);
+                        break;
+                }
+            } else {
+                // 数据异常
+                throw new \RuntimeException($dataArr['msg'], -4000000);
             }
+
         } else {
             // 数据异常
-            throw new \RuntimeException($dataArr['msg'], -4000000);
+            throw new \RuntimeException($data, -4000000);
         }
     }
 

@@ -12,13 +12,12 @@ return [
 
 return [
     'redis' => [
-        'host' => 'redis://127.0.0.1:6379',
-        'options' => [
-            'auth' => '',     // 密码，可选参数
-            'db' => 0,      // 数据库
-            'max_attempts' => 5, // 消费失败后，重试次数
-            'retry_seconds' => 5, // 重试间隔，单位秒
-        ]
+        'default' => [
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'password' => env('REDIS_PASSWORD', null),
+            'port' => env('REDIS_PORT', 6379),
+            'database' => 0,
+        ],
     ],
     'discovery' => [
         'etcd_host' => '10.168.30.25:2379',
