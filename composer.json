@@ -13,8 +13,7 @@
         "php": ">=7.2.0",
         "workerman/workerman": "^4.0.4",
         "workerman/redis" : "^1.0",
-        "yurunsoft/yurun-http": "~3.5",
-        "webpatser/laravel-uuid": "^3.0.1"
+        "yurunsoft/yurun-http": "~3.5"
     },
     "autoload": {
         "psr-4": {

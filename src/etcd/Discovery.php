@@ -28,7 +28,17 @@ class Discovery
      */
     public function __construct()
     {
-        self::$cacheKey = "etcd_discovery" . Registry::$serverUUID;
+        $uuid = Registry::$serverUUID;
+        if (!empty($uuid)) {
+            self::$cacheKey = "etcd_discovery" . $uuid;
+        } else {
+            // 从配置获取
+            $config = config('etcd', []);
+            if (!isset($config['discovery'])) {
+                throw new \RuntimeException("Etcd connection discovery not found");
+            }
+            self::$cacheKey = "etcd_discovery" . $config['discovery']["server_uuid"];
+        }
     }
 
     /**

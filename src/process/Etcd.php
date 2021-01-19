@@ -55,8 +55,8 @@ class Etcd
      */
     protected function serviceRegistry(AsyncTcpConnection $connection)
     {
-        $registerData = Registry::instance(self::$etcdConfig["etcd_host"])
-            ->generateParam(self::$etcdConfig["discovery"]['server_name'], self::$etcdConfig["discovery"]['server_port']);
+        $registerData = Registry::instance(self::$etcdConfig["etcd_host"], self::$etcdConfig["server_uuid"])
+            ->generateParam(self::$etcdConfig['server_name'], self::$etcdConfig['server_port']);
         $connection->send(json_encode($registerData));
     }
 

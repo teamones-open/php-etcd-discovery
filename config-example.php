@@ -21,7 +21,9 @@ return [
         ]
     ],
     'discovery' => [
+        'etcd_host' => '10.168.30.25:2379',
         'server_name' => 'teamones_saas',
+        'server_uuid' =>  \Webpatser\Uuid\Uuid::generate()->string,
         'server_port' => 8080,
         'discovery_name' => ['teamones_im', 'teamones_log']
     ]

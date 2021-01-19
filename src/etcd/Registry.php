@@ -25,27 +25,27 @@ class Registry
     /**
      * Registry constructor.
      * @param string $etcdHost
-     * @throws \Exception
+     * @param string $serverUUID
      */
-    public function __construct($etcdHost = '')
+    public function __construct($etcdHost = '', $serverUUID = '')
     {
         self::$serverEtcdHost = $etcdHost;
-        self::$serverUUID = \Webpatser\Uuid\Uuid::generate()->string;
+        self::$serverUUID = $serverUUID;
     }
 
     /**
      * 初始化
      * @param string $etcdHost
+     * @param string $serverUUID
      * @return object|static
-     * @throws \Exception
      */
-    public static function instance($etcdHost = '')
+    public static function instance($etcdHost = '', $serverUUID = '')
     {
         if (!empty(self::$instance)) {
             return self::$instance;
         }
 
-        self::$instance = new static($etcdHost);
+        self::$instance = new static($etcdHost, $serverUUID);
         return self::$instance;
     }
 
