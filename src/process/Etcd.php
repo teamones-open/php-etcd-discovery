@@ -104,7 +104,7 @@ class Etcd
         $dataArr = json_decode($data, true);
 
         if (is_array($dataArr)) {
-            if ($dataArr['code'] > 0) {
+            if ($dataArr['code'] >= 0) {
                 // 正常返回
                 switch ($dataArr['method']) {
                     case 'register':
@@ -117,13 +117,13 @@ class Etcd
                         break;
                 }
             } else {
-                // 数据异常
-                throw new \RuntimeException($dataArr['msg'], -4000000);
+                // 数据异常 TODO 写日志
+
             }
 
         } else {
-            // 数据异常
-            throw new \RuntimeException($data, -4000000);
+            // 数据异常  TODO 写日志
+
         }
     }
 
