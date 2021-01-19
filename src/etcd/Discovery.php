@@ -62,15 +62,15 @@ class Discovery
      * @param int $serverPort
      * @return array
      */
-    public function generateParam($serverName = '', $serverPort = 8080)
+    public function generateParam($serverName = '', $serverPort = "8080")
     {
         // etcd 地址
         $this->serverInfo['etcd_host'] = Registry::$serverEtcdHost;
 
         $this->serverInfo['param'] = json_encode([
-            'uuid' => Registry::$serverUUID,
-            'name' => $serverName,
-            'port' => $serverPort
+            'uuid' => (string)Registry::$serverUUID,
+            'name' => (string)$serverName,
+            'port' => (string)$serverPort
         ]);
 
         return $this->serverInfo;
@@ -83,14 +83,17 @@ class Discovery
      */
     public function refreshCache($name, $discoveryData = [])
     {
-        $cache = Client::connection()->get(self::$cacheKey);
+        $cache = Client::get(self::$cacheKey);
+
         if (empty($cache) && !isset($cache)) {
-            $cache = [];
+            $cacheArray = [];
+        }else{
+            $cacheArray = json_decode($cache, true);
         }
 
-        $cache[$name] = $discoveryData;
+        $cacheArray[$name] = $discoveryData;
 
-        Client::connection()->set(self::$cacheKey, json_encode($cache));
+        Client::set(self::$cacheKey, json_encode($cacheArray), 30);
     }
 
     /**
@@ -100,7 +103,8 @@ class Discovery
      */
     public function getServerConfigByName($name)
     {
-        $cache = Client::connection()->get(self::$cacheKey);
+        $cache =$cache = Client::get(self::$cacheKey);
+
         if (!empty($cache)) {
             $cacheArray = json_decode($cache, true);
             if (array_key_exists($name, $cacheArray)) {
