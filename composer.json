@@ -12,11 +12,13 @@
     "require": {
         "php": ">=7.2.0",
         "workerman/workerman": "^4.0.4",
-        "yurunsoft/yurun-http": "~3.5"
+        "workerman/redis" : "^1.0",
+        "yurunsoft/yurun-http": "~3.5",
+        "webpatser/laravel-uuid": "^3.0.1"
     },
     "autoload": {
         "psr-4": {
-            "teamones\\etcd\\": "src/"
+            "teamones\\": "src/"
         }
     },
     "bin": ["bin/php_etcd_client"]
