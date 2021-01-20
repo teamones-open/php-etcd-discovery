@@ -6,6 +6,7 @@ PHP版本，基于Workerman的ETCD服务注册和发现
 
 # 架构
 
+![image](./PHP_ETCD.jpg)
 
 # 引用
 
