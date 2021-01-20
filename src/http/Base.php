@@ -21,10 +21,7 @@ class Base
     protected $_method = '';
 
     // Post请求默认header头
-    protected $_headers = [
-        'Accept' => 'application/json',
-        'Content-Type' => 'application/json'
-    ];
+    protected $_headers = [];
 
     // 设置body参数
     protected $_body = null;

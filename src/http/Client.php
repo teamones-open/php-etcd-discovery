@@ -25,8 +25,8 @@ class Client extends Base
 
     /**
      * 设置指定服务地址
-     * @param $serverName
-     * @return string
+     * @param string $serverName
+     * @return $this
      */
     public function setServerHost($serverName = '')
     {
@@ -98,18 +98,33 @@ class Client extends Base
         $url = $this->generateUrl();
         switch ($this->_method) {
             case 'POST':
-                return self::instance()->timeout(30000, 500)
+                $response = self::instance()->timeout(30000, 500)
                     ->headers($this->_headers)
-                    ->post($url, $this->_body);
+                    ->post($url, $this->_body, 'json');
                 break;
             case 'GET':
-                return self::instance()->timeout(30000, 500)
+                $response = self::instance()->timeout(30000, 500)
                     ->headers($this->_headers)
                     ->get($url, $this->_body);
                 break;
             default:
-                return [];
+                $response = [];
                 break;
+        }
+
+        if ($response instanceof \Yurun\Util\YurunHttp\Http\Response) {
+            if ((int)$response->httpCode() !== 200) {
+                throw new \RuntimeException($response->getBody(), -4000000);
+            } else {
+                $body = $response->json(true);
+                if (!empty($body['code']) && (int)$body['code'] !== 0) {
+                    throw new \RuntimeException($body['msg'], $body['code']);
+                }
+
+                return $body;
+            }
+        } else {
+            return $response;
         }
     }
 }
