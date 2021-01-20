@@ -1,5 +1,6 @@
 <?php
 
+// config/process.php
 return [
     // ... 其它进程配置省略
 
@@ -9,7 +10,7 @@ return [
     ],
 ];
 
-
+// config/etcd.php
 return [
     'discovery' => [
         'etcd_host' => '10.168.30.25:2379',
@@ -21,6 +22,8 @@ return [
     ]
 ];
 
+
+// config/redis.php
 return [
     'default' => [
         'host' => env('REDIS_HOST', '127.0.0.1'),
