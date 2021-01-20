@@ -4,6 +4,7 @@ namespace teamones\process;
 
 use teamones\etcd\Discovery;
 use teamones\etcd\Registry;
+use teamones\Log;
 use Workerman\Connection\AsyncTcpConnection;
 use Workerman\Timer;
 
@@ -32,8 +33,16 @@ class Etcd
      */
     protected function exec()
     {
-        // 拉起 php_etcd_client 客户端并后台运行
-        exec("nohup " . __DIR__ . "/../../bin/php_etcd_client >/dev/null 2>&1 &", $output);
+        // 判断当前ws进程是否存在
+        $cmd = 'ps axu|grep "php_etcd_client"|grep -v "grep"|wc -l';
+        $ret = shell_exec("$cmd");
+
+        $ret = rtrim($ret, "\r\n");
+
+        if ($ret === "0") {
+            // 拉起 php_etcd_client 客户端并后台运行
+            exec("nohup " . __DIR__ . "/../../bin/php_etcd_client >/dev/null 2>&1 &", $output);
+        }
     }
 
     /**
@@ -66,8 +75,8 @@ class Etcd
      */
     protected function serviceDiscovery(AsyncTcpConnection $connection)
     {
-        // 每隔10秒维护服务节点状态
-        Timer::add(10, function () use ($connection) {
+        // 每隔5秒维护服务节点状态
+        Timer::add(5, function () use ($connection) {
             foreach (self::$etcdConfig["discovery_name"] as $discoveryName) {
                 $discoveryData = Discovery::instance()
                     ->generateParam($discoveryName);
@@ -117,13 +126,13 @@ class Etcd
                         break;
                 }
             } else {
-                // 数据异常 TODO 写日志
-
+                // 数据异常写入日志
+                Log::channel()->error($dataArr['msg']);
             }
 
         } else {
-            // 数据异常  TODO 写日志
-
+            // 数据异常写入日志
+            Log::channel()->error($data);
         }
     }
 
