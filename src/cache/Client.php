@@ -199,12 +199,12 @@ class Client
     public static function connection($name = 'default')
     {
         if (!isset(static::$_manager)) {
-            $config = config('etcd', []);
-            if (!isset($config['redis'])) {
+            $config = config('redis', []);
+            if (!isset($config)) {
                 throw new \RuntimeException("Etcd connection $name not found");
             }
 
-            static::$_manager  = new RedisManager('', 'phpredis', $config['redis']);
+            static::$_manager  = new RedisManager('', 'phpredis', $config);
         }
 
         return static::$_manager->connection($name);
