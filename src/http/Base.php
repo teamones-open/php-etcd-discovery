@@ -34,7 +34,7 @@ class Base
      */
     public static function instance()
     {
-        if (!empty(self::$_instance)) {
+        if (empty(self::$_instance)) {
             self::$_instance = new HttpRequest;
         }
         return self::$_instance;
