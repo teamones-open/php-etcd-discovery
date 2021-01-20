@@ -93,7 +93,7 @@ class Discovery
 
         $cacheArray[$name] = $discoveryData;
 
-        Client::set(self::$cacheKey, json_encode($cacheArray), 10);
+        Client::set(self::$cacheKey, json_encode($cacheArray), 5);
     }
 
     /**

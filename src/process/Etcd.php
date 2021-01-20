@@ -75,8 +75,8 @@ class Etcd
      */
     protected function serviceDiscovery(AsyncTcpConnection $connection)
     {
-        // 每隔5秒维护服务节点状态
-        Timer::add(5, function () use ($connection) {
+        // 每隔2秒维护服务节点状态
+        Timer::add(2, function () use ($connection) {
             foreach (self::$etcdConfig["discovery_name"] as $discoveryName) {
                 $discoveryData = Discovery::instance()
                     ->generateParam($discoveryName);
