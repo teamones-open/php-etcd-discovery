@@ -19,7 +19,7 @@ class Log
      */
     public static function channel($name = 'default')
     {
-        if (!empty(static::$_instance[$name])) {
+        if (empty(static::$_instance[$name])) {
             static::$_instance[$name] = new Logger($name);
             $logPath = Etcd::$etcdConfig['log'] ?? __DIR__ . '/log';
             static::$_instance[$name]->pushHandler(new StreamHandler($logPath, Logger::ERROR));
