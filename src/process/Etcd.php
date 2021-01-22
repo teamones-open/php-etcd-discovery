@@ -29,6 +29,14 @@ class Etcd
     }
 
     /**
+     * 杀死Etcd客户端进程
+     */
+    public function killEtcdClientProcess()
+    {
+        exec("killall php_etcd_client",$array);
+    }
+
+    /**
      * 后台运行 go etcd ws 服务端
      */
     protected function exec()
@@ -162,5 +170,14 @@ class Etcd
         };
 
         $connection->connect();
+    }
+
+
+    /**
+     * 关闭杀死 php_etcd_client
+     */
+    public function onWorkerStop()
+    {
+        $this->killEtcdClientProcess();
     }
 }
