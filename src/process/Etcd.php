@@ -62,6 +62,7 @@ class Etcd
             // 拉起 php_etcd_client 客户端并后台运行
             exec("nohup " . __DIR__ . "/../../bin/php_etcd_client >/dev/null 2>&1 & echo $!", $output);
 
+            // 记录 php_etcd_client 进程 id
             if (!empty($output[0])) {
                 $this->cacheInstance->set(self::$phpEtcdClientPIDKey, (int)$output[0]);
             }
@@ -170,7 +171,7 @@ class Etcd
         $connection = new AsyncTcpConnection(self::$wsAddr);
 
         // 给接口发送数据
-        $connection->onConnect = function ($connection) {
+        $connection->onWebSocketConnect = function ($connection) {
             $this->wsOnConnect($connection);
         };
 
