@@ -7,16 +7,26 @@ use teamones\etcd\Registry;
 use teamones\Log;
 use Workerman\Connection\AsyncTcpConnection;
 use Workerman\Timer;
+use Ark\Filecache\FileCache;
 
 class Etcd
 {
     // websocket 地址
     protected static $wsAddr = 'ws://127.0.0.1:8083';
 
+    // php_etcd_client 进程id
+    protected static $phpEtcdClientPIDKey = "php_etcd_client_pid";
+
+    protected $cacheInstance = null;
+
 
     // 服务Etcd Host
     public static $etcdConfig = [];
 
+    /**
+     * Etcd constructor.
+     * @throws \Exception
+     */
     public function __construct()
     {
         if (empty(self::$etcdConfig)) {
@@ -25,15 +35,16 @@ class Etcd
                 throw new \RuntimeException("Etcd connection discovery not found");
             }
             self::$etcdConfig = $config['discovery'];
-        }
-    }
 
-    /**
-     * 杀死Etcd客户端进程
-     */
-    public function killEtcdClientProcess()
-    {
-        exec("killall php_etcd_client",$array);
+            // 文件缓存
+            $cachePath = self::$etcdConfig['cache'] ?? __DIR__ . '/../log';
+            $this->cacheInstance = new FileCache([
+                'root' => $cachePath, // Cache root
+                'ttl' => 0,
+                'compress' => false,
+                'serialize' => 'json',
+            ]);
+        }
     }
 
     /**
@@ -49,7 +60,11 @@ class Etcd
 
         if ($ret === "0") {
             // 拉起 php_etcd_client 客户端并后台运行
-            exec("nohup " . __DIR__ . "/../../bin/php_etcd_client >/dev/null 2>&1 &", $output);
+            exec("nohup " . __DIR__ . "/../../bin/php_etcd_client >/dev/null 2>&1 & echo $!", $output);
+
+            if (!empty($output[0])) {
+                $this->cacheInstance->set(self::$phpEtcdClientPIDKey, (int)$output[0]);
+            }
         }
     }
 
@@ -173,11 +188,14 @@ class Etcd
     }
 
 
-    /**
-     * 关闭杀死 php_etcd_client
-     */
+    // stop 事件
     public function onWorkerStop()
     {
-        $this->killEtcdClientProcess();
+        // 关闭杀死 php_etcd_client
+        $phpEtcdClientPID = $this->cacheInstance->get(self::$phpEtcdClientPIDKey);
+        if($phpEtcdClientPID > 0){
+            $this->cacheInstance->delete(self::$phpEtcdClientPIDKey);
+            \posix_kill($phpEtcdClientPID, SIGKILL);
+        }
     }
 }

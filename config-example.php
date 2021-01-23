@@ -18,7 +18,8 @@ return [
         'server_uuid' =>  \Webpatser\Uuid\Uuid::generate()->string,
         'server_port' => 8080,
         'discovery_name' => ['teamones_im', 'teamones_log'],
-        'log' => ''
+        'log' => '',
+        'cache' => ''
     ]
 ];
 

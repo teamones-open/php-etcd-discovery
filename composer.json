@@ -15,7 +15,8 @@
         "workerman/redis" : "^1.0",
         "yurunsoft/yurun-http": "~3.5",
         "illuminate/redis": "~7.30",
-        "monolog/monolog": "^2.2"
+        "monolog/monolog": "^2.2",
+        "ark/filecache": "^0.1.0"
     },
     "autoload": {
         "psr-4": {
