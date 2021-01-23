@@ -182,7 +182,8 @@ class Etcd
 
         // 处理错误信息
         $connection->onError = function ($connection, $code, $msg) {
-            throw new \RuntimeException($msg, -$code);
+            // 数据异常写入日志
+            Log::channel()->error("code:{$code}, msg:{$msg}");
         };
 
         $connection->connect();
