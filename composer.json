@@ -14,7 +14,7 @@
         "workerman/workerman": "^4.0.4",
         "workerman/redis" : "^1.0",
         "yurunsoft/yurun-http": "~3.5",
-        "illuminate/redis": "~7.30",
+        "illuminate/redis": "~8.20",
         "monolog/monolog": "^2.2",
         "ark/filecache": "^0.1.0"
     },
