@@ -13,7 +13,7 @@
         "php": ">=7.2.0",
         "workerman/workerman": "^4.0.4",
         "workerman/redis" : "^1.0",
-        "yurunsoft/yurun-http": "~3.5",
+        "teamones/http": "dev-master",
         "illuminate/redis": "~8.20",
         "monolog/monolog": "^2.2",
         "ark/filecache": "^0.1.0"

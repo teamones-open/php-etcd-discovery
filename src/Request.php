@@ -2,7 +2,7 @@
 
 namespace teamones;
 
-use teamones\http\Client;
+use teamones\curl\Client;
 
 class Request
 {
@@ -15,7 +15,7 @@ class Request
     /**
      * @param string $name
      * @param string $name
-     * @return mixed|\teamones\http\Client
+     * @return mixed|\teamones\curl\Client
      */
     public static function connection($name = 'http')
     {
