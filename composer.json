@@ -15,7 +15,7 @@
         "workerman/redis" : "^1.0",
         "teamones/http": "dev-master",
         "illuminate/redis": "~8.20",
-        "monolog/monolog": "^2.2",
+        "teamones/log": "dev-master",
         "ark/filecache": "^0.1.0"
     },
     "autoload": {
