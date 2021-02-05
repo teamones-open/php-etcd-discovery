@@ -2,6 +2,7 @@
 
 namespace teamones\rpc;
 
+use teamones\breaker\Breaker;
 
 class Client
 {
