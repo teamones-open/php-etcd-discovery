@@ -106,6 +106,7 @@ class RedisAdapter implements \LeoCarmo\CircuitBreaker\Adapters\AdapterInterface
         $this->redis->set(
             $this->makeNamespace($service) . ':open',
             time(),
+            'EX',
             CircuitBreaker::getServiceSetting($service, 'timeWindow')
         );
     }
@@ -118,6 +119,7 @@ class RedisAdapter implements \LeoCarmo\CircuitBreaker\Adapters\AdapterInterface
         $this->redis->set(
             $this->makeNamespace($service) . ':half_open',
             time(),
+            'EX',
             CircuitBreaker::getServiceSetting($service, 'timeWindow')
             + CircuitBreaker::getServiceSetting($service, 'intervalToHalfOpen')
         );
