@@ -21,5 +21,12 @@ class Breaker extends \LeoCarmo\CircuitBreaker\CircuitBreaker
 
         // Set redis adapter for CB
         self::setAdapter($adapter);
+
+        // Configure settings for CB
+        self::setGlobalSettings([
+            'timeWindow' => 30, // 开路时间（秒）
+            'failureRateThreshold' => 15, // 开路故障率
+            'intervalToHalfOpen' => 10, // 半开时间（秒）重试
+        ]);
     }
 }
