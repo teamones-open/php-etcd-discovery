@@ -3,30 +3,56 @@
 namespace teamones\breaker;
 
 use teamones\cache\Client;
-use teamones\process\Etcd;
+use LeoCarmo\CircuitBreaker\CircuitBreaker;
 
-class Breaker extends \LeoCarmo\CircuitBreaker\CircuitBreaker
+class Breaker
 {
+
+    protected static $adapterInit = false;
+
     /**
-     * Breaker constructor.
+     * 初始化
      */
-    public function __construct()
+    protected static function instance()
     {
+
+        if (self::$adapterInit) {
+            return;
+        }
+
         // redis连接句柄
         $redis = Client::connection();
 
         // 设置当前熔断器命名空间，读取当前服务名称加上随机数
-        $redisNamespace = Etcd::$etcdConfig['server_name'] . "_" . Etcd::$etcdConfig['server_uuid'];
+        $config = config('etcd', []);
+        if (!isset($config['discovery'])) {
+            throw new \RuntimeException("Etcd connection discovery not found");
+        }
+        $redisNamespace = $config['discovery']['server_name'] . "_" . $config['discovery']['server_uuid'];
         $adapter = new RedisAdapter($redis, $redisNamespace);
 
         // Set redis adapter for CB
-        self::setAdapter($adapter);
+        CircuitBreaker::setAdapter($adapter);
 
         // Configure settings for CB
-        self::setGlobalSettings([
+        CircuitBreaker::setGlobalSettings([
             'timeWindow' => 30, // 开路时间（秒）
             'failureRateThreshold' => 15, // 开路故障率
             'intervalToHalfOpen' => 10, // 半开时间（秒）重试
         ]);
+
+        self::$adapterInit = true;
+    }
+
+
+    /**
+     * @param $name
+     * @param $arguments
+     * @return mixed
+     */
+    public static function __callStatic($name, $arguments)
+    {
+        self::instance();
+        return CircuitBreaker::{$name}(... $arguments);
     }
 }
