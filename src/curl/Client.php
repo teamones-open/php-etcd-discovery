@@ -26,9 +26,10 @@ class Client extends \teamones\http\Client
 
     /**
      * 组装请求, 总超时30s，连接超时500ms
-     * @return array|\Yurun\Util\YurunHttp\Http\Response
+     * @param string $type
+     * @return array|mixed|\Yurun\Util\YurunHttp\Http\Response
      */
-    public function request()
+    public function request($type = 'sync')
     {
         $url = $this->generateUrl();
 
