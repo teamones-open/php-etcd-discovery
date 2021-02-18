@@ -2,7 +2,8 @@
 
 PHP版本，基于Workerman的ETCD服务注册和发现
 
-. 目前只支持http服务
+- 支持http服务
+- 支持 text 协议的 rpc 服务
 
 # 架构
 
