@@ -2,7 +2,8 @@
 
 namespace teamones;
 
-use teamones\curl\Client;
+use teamones\driver\Curl;
+use teamones\driver\JsonRpc;
 
 class Request
 {
@@ -15,15 +16,21 @@ class Request
     /**
      * @param string $name
      * @param string $name
-     * @return mixed|\teamones\curl\Client
+     * @return mixed|\teamones\driver\Curl|\teamones\driver\JsonRpc
      */
     public static function connection($name = 'http')
     {
         if (!isset(static::$_instance[$name])) {
-            if ($name === 'http') {
-                static::$_instance[$name] = new Client();
-            } else {
-                static::$_instance[$name] = null;
+            switch ($name) {
+                case 'http':
+                    static::$_instance[$name] = new Curl();
+                    break;
+                case 'rpc':
+                    static::$_instance[$name] = new JsonRpc();
+                    break;
+                default:
+                    static::$_instance[$name] = null;
+                    break;
             }
         }
         return static::$_instance[$name];

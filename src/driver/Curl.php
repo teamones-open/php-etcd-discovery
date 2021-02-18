@@ -1,11 +1,11 @@
 <?php
 
-namespace teamones\curl;
+namespace teamones\driver;
 
 use teamones\breaker\Breaker;
 use teamones\etcd\Discovery;
 
-class Client extends \teamones\http\Client
+class Curl extends \teamones\http\Client
 {
     /**
      * 设置指定服务地址
@@ -62,13 +62,15 @@ class Client extends \teamones\http\Client
 
                 throw new \RuntimeException($response->getBody(), -4000000);
             } else {
-                $body = $response->json(true);
-                if (!empty($body['code']) && (int)$body['code'] !== 0) {
-                    throw new \RuntimeException($body['msg'], $body['code']);
-                }
 
                 // 关闭熔断器
                 Breaker::success($serviceKey);
+
+                $body = $response->json(true);
+
+                if (!empty($body['code']) && (int)$body['code'] !== 0) {
+                    throw new \RuntimeException($body['msg'], $body['code']);
+                }
 
                 return $body;
             }
