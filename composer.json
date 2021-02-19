@@ -12,7 +12,6 @@
     "require": {
         "php": ">=7.4",
         "workerman/workerman": "^4.0.4",
-        "workerman/redis" : "^1.0",
         "illuminate/redis": "~8.20",
         "teamones/log": ">=0.0.1",
         "teamones/json-rpc": ">=0.0.1",
