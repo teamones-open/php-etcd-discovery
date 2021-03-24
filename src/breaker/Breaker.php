@@ -36,7 +36,7 @@ class Breaker
 
         // Configure settings for CB
         CircuitBreaker::setGlobalSettings([
-            'timeWindow' => 30, // 开路时间（秒）
+            'timeWindow' => 20, // 开路时间（秒）
             'failureRateThreshold' => 15, // 开路故障率
             'intervalToHalfOpen' => 10, // 半开时间（秒）重试
         ]);
