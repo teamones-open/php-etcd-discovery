@@ -103,7 +103,7 @@ class Discovery
      */
     public function getServerConfigByName($name)
     {
-        $cache =$cache = Client::get(self::$cacheKey);
+        $cache = Client::get(self::$cacheKey);
 
         if (!empty($cache)) {
             $cacheArray = json_decode($cache, true);
