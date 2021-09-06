@@ -9,6 +9,8 @@ PHP版本，基于Workerman的ETCD服务注册和发现
 
 - 支持http服务
 - 支持 text 协议的 rpc 服务（测试）
+- 自带熔断器
+- 支持 K8S service ip 自动获取，非K8S环境自动获取本地ip
 
 # 架构
 
