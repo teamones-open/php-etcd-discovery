@@ -12,7 +12,7 @@ return [
         'handler' => teamones\process\JsonRpc::class,
         'listen' => 'text://0.0.0.0:8083', // 这里用了text协议，也可以用frame或其它协议
         'count' => 2, // 可以设置多进程
-    ]
+    ],
 ];
 
 // config/etcd.php
@@ -25,11 +25,13 @@ return [
         'rpc_server_port' => 8083,
         'service_namespace' => "\\common\\service\\",
         'discovery_name' => ['teamones_im', 'teamones_log'],
+        // 单位为毫秒；未配置时保持原有的 30000/500 默认值。
+        'request_timeout' => 5000,
+        'connect_timeout' => 500,
         'log' => '',
-        'cache' => ''
-    ]
+        'cache' => '',
+    ],
 ];
-
 
 // config/redis.php
 return [

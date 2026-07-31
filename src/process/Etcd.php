@@ -10,15 +10,56 @@ use Workerman\Timer;
 
 class Etcd
 {
-    // websocket 地址
+    protected const HEARTBEAT_INTERVAL = 10;
+    protected const DISCOVERY_INTERVAL = 1;
+    protected const REGISTER_RETRY_MAX_DELAY = 10;
+    protected const RECONNECT_MAX_DELAY = 10;
+
+    /**
+     * Local Go client websocket address.
+     *
+     * @var string
+     */
     protected static $wsAddr = 'ws://127.0.0.1:8083';
 
-
-    // 服务Etcd Host
+    /**
+     * Etcd discovery configuration.
+     *
+     * @var array
+     */
     public static $etcdConfig = [];
 
     /**
-     * Etcd constructor.
+     * @var int|null
+     */
+    protected $heartbeatTimerId;
+
+    /**
+     * @var int|null
+     */
+    protected $discoveryTimerId;
+
+    /**
+     * @var int|null
+     */
+    protected $registerRetryTimerId;
+
+    /**
+     * @var int
+     */
+    protected $registerRetryDelay = 1;
+
+    /**
+     * @var int
+     */
+    protected $reconnectDelay = 1;
+
+    /**
+     * @var bool
+     */
+    protected $stopping = false;
+
+    /**
      * @throws \Exception
      */
     public function __construct()
@@ -32,21 +73,15 @@ class Etcd
         }
     }
 
-    /**
-     * 每隔10秒发送ws心跳维持包
-     * @param AsyncTcpConnection $connection
-     */
     protected function heartbeat(AsyncTcpConnection $connection)
     {
-        // 每隔10秒发送心跳包
-        Timer::add(10, function () use ($connection) {
+        $this->clearTimer($this->heartbeatTimerId);
+        $this->heartbeatTimerId = Timer::add(self::HEARTBEAT_INTERVAL, function () use ($connection) {
             $connection->send("PING");
         });
     }
 
     /**
-     * 服务注册
-     * @param AsyncTcpConnection $connection
      * @throws \Exception
      */
     protected function serviceRegistry(AsyncTcpConnection $connection)
@@ -56,41 +91,78 @@ class Etcd
         $connection->send(json_encode($registerData));
     }
 
-    /**
-     * 维护服务发现
-     * @param AsyncTcpConnection $connection
-     */
     protected function serviceDiscovery(AsyncTcpConnection $connection)
     {
-        // 每隔1秒维护服务节点状态
-        Timer::add(1, function () use ($connection) {
-            foreach (self::$etcdConfig["discovery_name"] as $discoveryName) {
-                $discoveryData = Discovery::instance()
-                    ->generateParam($discoveryName);
-                $connection->send(json_encode($discoveryData));
-            }
+        if ($this->discoveryTimerId !== null) {
+            return;
+        }
+
+        $this->sendDiscoveryRequest($connection);
+        $this->discoveryTimerId = Timer::add(self::DISCOVERY_INTERVAL, function () use ($connection) {
+            $this->sendDiscoveryRequest($connection);
         });
     }
 
+    protected function sendDiscoveryRequest(AsyncTcpConnection $connection)
+    {
+        foreach (self::$etcdConfig["discovery_name"] as $discoveryName) {
+            $discoveryData = Discovery::instance()->generateParam($discoveryName);
+            $connection->send(json_encode($discoveryData));
+        }
+    }
+
+    protected function scheduleRegistryRetry(AsyncTcpConnection $connection)
+    {
+        if ($this->registerRetryTimerId !== null) {
+            return;
+        }
+
+        $delay = $this->registerRetryDelay;
+        $this->registerRetryDelay = min($delay * 2, self::REGISTER_RETRY_MAX_DELAY);
+        $this->registerRetryTimerId = Timer::add($delay, function () use ($connection) {
+            $this->registerRetryTimerId = null;
+            $this->serviceRegistry($connection);
+        }, [], false);
+    }
+
+    protected function resetRegistryRetry()
+    {
+        $this->clearTimer($this->registerRetryTimerId);
+        $this->registerRetryDelay = 1;
+    }
+
+    protected function stopConnectionTimers()
+    {
+        $this->clearTimer($this->heartbeatTimerId);
+        $this->clearTimer($this->discoveryTimerId);
+        $this->clearTimer($this->registerRetryTimerId);
+    }
+
     /**
-     * 连接上注册 etcd 服务
-     * @param AsyncTcpConnection $connection
+     * @param int|null $timerId
+     */
+    protected function clearTimer(&$timerId)
+    {
+        if ($timerId === null) {
+            return;
+        }
+
+        Timer::del($timerId);
+        $timerId = null;
+    }
+
+    /**
      * @throws \Exception
      */
     protected function wsOnConnect(AsyncTcpConnection $connection)
     {
-        // 开启心跳包
+        $this->stopConnectionTimers();
+        $this->registerRetryDelay = 1;
+        $this->reconnectDelay = 1;
         $this->heartbeat($connection);
-
-        // 注册服务
         $this->serviceRegistry($connection);
     }
 
-    /**
-     * 处理消息
-     * @param AsyncTcpConnection $connection
-     * @param $data
-     */
     protected function wsOnMessage(AsyncTcpConnection $connection, $data)
     {
         if ($data === "PONG") {
@@ -98,28 +170,31 @@ class Etcd
         }
 
         $dataArr = json_decode($data, true);
-
-        if (is_array($dataArr)) {
-            if ($dataArr['code'] >= 0) {
-                // 正常返回
-                switch ($dataArr['method']) {
-                    case 'register':
-                        // 注册成功开启服务发现定时任务
-                        $this->serviceDiscovery($connection);
-                        break;
-                    case 'discovery':
-                        // 服务发现返回数据写入Cache
-                        Discovery::instance()->refreshCache($dataArr['data']['server_name'], $dataArr['data']);
-                        break;
-                }
-            } else {
-                // 数据异常写入日志
-                Log::channel()->error($dataArr['msg']);
-            }
-
-        } else {
-            // 数据异常写入日志
+        if (!is_array($dataArr)) {
             Log::channel()->error($data);
+            return;
+        }
+
+        $method = $dataArr['method'] ?? '';
+        $code = (int)($dataArr['code'] ?? -1);
+        if ($code < 0) {
+            Log::channel()->error($dataArr['msg'] ?? 'unknown etcd client error');
+            if ($method === 'register') {
+                $this->scheduleRegistryRetry($connection);
+            }
+            return;
+        }
+
+        switch ($method) {
+            case 'register':
+                $this->resetRegistryRetry();
+                $this->serviceDiscovery($connection);
+                break;
+            case 'discovery':
+                if (!empty($dataArr['data']['server_name'])) {
+                    Discovery::instance()->refreshCache($dataArr['data']['server_name'], $dataArr['data']);
+                }
+                break;
         }
     }
 
@@ -130,29 +205,36 @@ class Etcd
     {
         $connection = new AsyncTcpConnection(self::$wsAddr);
 
-        // 给接口发送数据
         $connection->onWebSocketConnect = function ($connection) {
             $this->wsOnConnect($connection);
         };
 
-        // 处理收到信息
         $connection->onMessage = function ($connection, $data) {
             $this->wsOnMessage($connection, $data);
         };
 
-        // 处理错误信息
         $connection->onError = function ($connection, $code, $msg) {
-            // 数据异常写入日志
             Log::channel()->error("code:{$code}, msg:{$msg}");
+        };
+
+        $connection->onClose = function ($connection) {
+            $this->stopConnectionTimers();
+            if ($this->stopping) {
+                return;
+            }
+
+            $delay = $this->reconnectDelay;
+            $this->reconnectDelay = min($delay * 2, self::RECONNECT_MAX_DELAY);
+            Log::channel()->error("etcd websocket closed, reconnecting in {$delay}s");
+            $connection->reConnect($delay);
         };
 
         $connection->connect();
     }
 
-
-    // stop 事件
     public function onWorkerStop()
     {
-
+        $this->stopping = true;
+        $this->stopConnectionTimers();
     }
 }
