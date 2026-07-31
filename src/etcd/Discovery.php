@@ -5,8 +5,15 @@ namespace teamones\etcd;
 use teamones\cache\Client;
 use teamones\Log;
 
+/**
+ * 管理 Go 客户端返回的服务发现结果。
+ *
+ * v2 缓存为每个服务使用独立 Redis Key/TTL；新版读取器永不回退旧聚合 Key，
+ * 以免已下线节点被过期数据“复活”。
+ */
 class Discovery
 {
+    // 单位为秒；每个 v2 服务 Key（包括空地址 tombstone）独立计时。
     protected const DEFAULT_CACHE_TTL = 5;
 
     /**
@@ -16,24 +23,32 @@ class Discovery
 
 
     /**
-     * Cache key prefix scoped to the current consumer instance.
+     * v2 Key 拼接格式："etcd_discovery" + server_uuid + ":v2:" + sha256(server_name)。
+     *
+     * UUID 隔离消费者实例，服务名哈希用于固定 Key 长度并避免特殊字符。
      *
      * @var string
      */
     protected $cacheKeyPrefix = '';
 
-    /** @var string */
+    /**
+     * 旧 SDK 使用的整表 JSON Key，所有服务共享一个 TTL，仅供迁移期双写。
+     *
+     * @var string
+     */
     protected $legacyCacheKey = '';
 
     /**
-     * Keep old workers alive during a rolling upgrade. New workers never read
-     * this aggregate key because its entries do not have independent ages.
+     * 是否双写旧聚合 Key，默认关闭。
+     *
+     * 只有旧新 PHP Worker 共存时才临时开启；新版始终只读 v2。长期开启会
+     * 增加 Redis GET/SET，并继续保留旧协议“整表共享 TTL”的限制。
      *
      * @var bool
      */
     protected $legacyCacheWrite = false;
 
-    /** @var int */
+    /** @var int 每个 v2 服务的独立有效期（秒） */
     protected $cacheTtl = self::DEFAULT_CACHE_TTL;
 
 
@@ -45,7 +60,9 @@ class Discovery
     ];
 
     /**
-     * Discovery constructor.
+     * 初始化当前消费者的 Redis Key 命名空间和缓存策略。
+     *
+     * @throws \RuntimeException 服务发现配置或 server_uuid 缺失时抛出
      */
     public function __construct()
     {
@@ -114,9 +131,15 @@ class Discovery
     }
 
     /**
-     * 把服务地址写入缓存
-     * @param $name
+     * 将服务发现结果写入缓存。
+     *
+     * v2 是主写入；legacy 仅是 best-effort 兼容写。`server_host === ''`
+     * 是“服务不可用” tombstone，必须照常缓存，不能删除或忽略。
+     *
+     * @param string $name
      * @param array $discoveryData
+     * @return void
+     * @throws \RuntimeException v2 JSON 编码失败，或 Redis 写入抛出异常时向上传递
      */
     public function refreshCache($name, $discoveryData = [])
     {
@@ -131,6 +154,7 @@ class Discovery
 
         // One key per service gives every discovery result an independent TTL
         // and avoids lost updates from concurrent read-modify-write operations.
+        // Empty server_host is an intentional tombstone and must be cached as-is.
         Client::set($this->serviceCacheKey($name), $cacheValue, 'EX', $this->cacheTtl);
 
         if ($this->legacyCacheWrite) {
@@ -143,8 +167,12 @@ class Discovery
     }
 
     /**
-     * 通过服务名称获取服务配置
-     * @param $name
+     * 只从 v2 Key 读取指定服务。
+     *
+     * Key 缺失、过期或损坏时直接返回空数组，绝不回退 legacy，即使旧 Key
+     * 仍保留地址。返回值可能是包含空 server_host 的 tombstone。
+     *
+     * @param string $name
      * @return array
      */
     public function getServerConfigByName($name)
@@ -168,11 +196,27 @@ class Discovery
         return $serverConfig;
     }
 
+    /**
+     * 生成稳定、定长的服务名哈希后缀；SHA-256 仅用于 Key 规范化，不承担安全职责。
+     *
+     * @param string $name
+     * @return string
+     */
     protected function serviceCacheKey($name)
     {
         return $this->cacheKeyPrefix . hash('sha256', (string)$name);
     }
 
+    /**
+     * 迁移期为旧读取器刷新整表 JSON Key。
+     *
+     * 旧协议没有服务级 TTL，GET -> SET 也存在并发覆盖限制。调用方必须隔离
+     * 本方法的所有异常，新版读取器不得依赖此 Key。
+     *
+     * @param string $name
+     * @param array $discoveryData
+     * @return void
+     */
     protected function refreshLegacyCache($name, array $discoveryData)
     {
         $cache = Client::get($this->legacyCacheKey);
@@ -190,6 +234,15 @@ class Discovery
         Client::set($this->legacyCacheKey, $cacheValue, 'EX', $this->cacheTtl);
     }
 
+    /**
+     * best-effort 记录兼容写失败。
+     *
+     * logger 未配置或 handler 自身抛异常时降级到 error_log，日志链路绝不能
+     * 反向破坏已经成功的 v2 主写入。
+     *
+     * @param \Throwable $exception
+     * @return void
+     */
     protected function logLegacyCacheFailure(\Throwable $exception)
     {
         $message = 'Etcd legacy discovery cache write failed: ' . $exception->getMessage();

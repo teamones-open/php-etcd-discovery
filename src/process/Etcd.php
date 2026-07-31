@@ -8,8 +8,15 @@ use teamones\Log;
 use Workerman\Connection\AsyncTcpConnection;
 use Workerman\Timer;
 
+/**
+ * PHP 与本地 Go etcd 客户端之间的 WebSocket 状态机。
+ *
+ * 连接建立后先注册并等待 ACK，只有注册成功才启动周期性服务发现。
+ * 连接、ACK、心跳三层 watchdog 共同保证“进程存活但不再响应”时也能自愈。
+ */
 class Etcd
 {
+    // 协议调度、watchdog 与指数退避单位均为秒。
     protected const HEARTBEAT_INTERVAL = 10;
     protected const DISCOVERY_INTERVAL = 1;
     protected const REGISTER_ACK_TIMEOUT = 10;
@@ -27,7 +34,11 @@ class Etcd
     /** @var array */
     public static $etcdConfig = [];
 
-    /** @var AsyncTcpConnection|null */
+    /**
+     * 当前唯一有效连接。所有异步回调都必须校验对象身份，防止旧连接回调污染新会话。
+     *
+     * @var AsyncTcpConnection|null
+     */
     protected $connection;
 
     /** @var int|null */
@@ -42,13 +53,22 @@ class Etcd
     /** @var int|null */
     protected $registerAckTimerId;
 
-    /** @var int|null */
+    /**
+     * TCP 建连 + WebSocket 握手 watchdog；只有 onWebSocketConnect 表示连接完成。
+     *
+     * @var int|null
+     */
     protected $connectTimerId;
 
-    /** @var int|null */
+    /**
+     * 与 Workerman native reconnect 同期触发的 companion Timer，用于从实际重连时刻启动 watchdog。
+     * Workerman 内部重连 Timer 仍由 AsyncTcpConnection::reconnect()/cancelReconnect() 管理。
+     *
+     * @var int|null
+     */
     protected $reconnectTimerId;
 
-    /** @var int|null */
+    /** @var int|null 独立于 WebSocket 会话的本地 Go 进程存活检查 Timer */
     protected $goClientTimerId;
 
     /** @var int */
@@ -60,7 +80,11 @@ class Etcd
     /** @var float */
     protected $heartbeatExpectedAt = 0.0;
 
-    /** @var float */
+    /**
+     * 最后一次有效 PONG 或合法协议响应时间；无效帧不能续期。
+     *
+     * @var float
+     */
     protected $lastServerMessageAt = 0.0;
 
     /** @var bool */
@@ -72,10 +96,18 @@ class Etcd
     /** @var bool */
     protected $connectDriftGraceUsed = false;
 
-    /** @var bool */
+    /**
+     * register 已发出但尚未收到 ACK。成功或失败 ACK 都会清除，只有无 ACK 才重启 Go。
+     *
+     * @var bool
+     */
     protected $registerPending = false;
 
-    /** @var bool */
+    /**
+     * Worker 停止门闩；必须在关连接前置 true，阻止同步 onClose 再次安排重连。
+     *
+     * @var bool
+     */
     protected $stopping = false;
 
     /**
@@ -97,6 +129,13 @@ class Etcd
     }
 
     /**
+     * 启动应用层 PING/PONG 心跳与服务端静默检测。
+     *
+     * PONG 和任何合法协议响应都证明 Go 仍活跃。超过静默阈值会重启 Go 并断开当前连接。
+     * Select 事件循环可能先执行超期 Timer 再读 socket，所以严重漂移时只给一次 I/O 宽限，
+     * 避免误杀也避免无限续期。
+     *
+     * @param AsyncTcpConnection $connection
      * @return bool
      */
     protected function startHeartbeat(AsyncTcpConnection $connection)
@@ -144,7 +183,11 @@ class Etcd
     }
 
     /**
-     * @throws \Exception
+     * 发送注册请求并启动 ACK watchdog。
+     *
+     * discovery 只能由后续成功 ACK 启动，不能在发送注册后提前运行。
+     *
+     * @param AsyncTcpConnection $connection
      */
     protected function serviceRegistry(AsyncTcpConnection $connection)
     {
@@ -164,6 +207,12 @@ class Etcd
         $this->scheduleRegisterAckTimeout($connection);
     }
 
+    /**
+     * 在注册成功后启动唯一的周期性发现 Timer，并立即触发首次发现。
+     *
+     * @param AsyncTcpConnection $connection
+     * @return void
+     */
     protected function serviceDiscovery(AsyncTcpConnection $connection)
     {
         if ($this->discoveryTimerId !== null || !$this->isCurrentConnection($connection)) {
@@ -194,6 +243,12 @@ class Etcd
         }
     }
 
+    /**
+     * 为当前 register attempt 重置 ACK 超时状态。
+     *
+     * @param AsyncTcpConnection $connection
+     * @return void
+     */
     protected function scheduleRegisterAckTimeout(AsyncTcpConnection $connection)
     {
         $this->clearTimer($this->registerAckTimerId);
@@ -254,6 +309,15 @@ class Etcd
         }
     }
 
+    /**
+     * 从实际 connect attempt 开始计算建连超时，不把 reconnect delay 计入。
+     *
+     * Timer 自身严重漂移时只重置一次新窗口；宽限后仍未完成 WebSocket 握手就执行恢复。
+     *
+     * @param AsyncTcpConnection $connection
+     * @param bool $resetDriftGrace
+     * @return void
+     */
     protected function scheduleConnectTimeout(
         AsyncTcpConnection $connection,
         $resetDriftGrace = true
@@ -286,6 +350,18 @@ class Etcd
         }
     }
 
+    /**
+     * 为 Workerman native reconnect 配置同期 companion Timer。
+     *
+     * 调用方必须先在 onClose 内调用 native reconnect($delay)，使状态在回调返回前
+     * 回到 INITIAL，避免 Workerman destroy() 清空回调。两个 Timer 同期竞态时：
+     * custom 先执行则仅在 INITIAL 状态调用 reconnect(0)，native 先执行则在
+     * CONNECTING/ESTABLISHED 状态下只启动 watchdog，绝不再发起第二次连接。
+     *
+     * @param AsyncTcpConnection $connection
+     * @param int|float $delay
+     * @return void
+     */
     protected function scheduleReconnect(AsyncTcpConnection $connection, $delay)
     {
         $this->clearTimer($this->reconnectTimerId);
@@ -319,6 +395,13 @@ class Etcd
         }
     }
 
+    /**
+     * 启动独立于 WebSocket 会话的 Go 进程存活监控。
+     *
+     * 这里只校验 OS 进程身份；“进程存活但业务无响应”由注册 ACK 和心跳 watchdog 处理。
+     *
+     * @return void
+     */
     protected function startGoClientMonitor()
     {
         $this->ensureGoClientRunning();
@@ -368,6 +451,14 @@ class Etcd
         $this->closeConnection($connection);
     }
 
+    /**
+     * 处理不可恢复的 Timer 创建失败。
+     *
+     * 缺少 watchdog 时继续运行比立即退出更危险，因此停止重连后故意抛异常，
+     * 交给 Workerman master 重启当前不安全 Worker。
+     *
+     * @return void
+     */
     protected function criticalTimerFailure(AsyncTcpConnection $connection, $timerName)
     {
         $message = "unable to create etcd {$timerName} timer";
@@ -439,6 +530,14 @@ class Etcd
         $this->registerRetryDelay = 1;
     }
 
+    /**
+     * 清理当前 WebSocket 会话的所有 package Timer。
+     *
+     * 不清理 Go supervisor Timer，也不管理 Workerman 内部 native reconnect Timer；
+     * native Timer 必须由 cancelReconnect() 单独取消。
+     *
+     * @return void
+     */
     protected function stopConnectionTimers()
     {
         $this->clearTimer($this->heartbeatTimerId);
@@ -450,6 +549,11 @@ class Etcd
         $this->heartbeatExpectedAt = 0.0;
     }
 
+    /**
+     * 统一将 Workerman Timer::add() 的 false 失败值转换为 null，便于状态机检查。
+     *
+     * @return int|null
+     */
     protected function addTimer($interval, $callback, $persistent = true)
     {
         $timerId = Timer::add($interval, $callback, [], $persistent);
@@ -461,6 +565,13 @@ class Etcd
         return microtime(true);
     }
 
+    /**
+     * best-effort 记录恢复路径错误。
+     *
+     * 日志客户端未配置或 handler 抛异常时降级到 error_log，不允许日志故障阻断自愈。
+     *
+     * @return void
+     */
     protected function logError($message)
     {
         $message = (string)$message;
@@ -515,6 +626,14 @@ class Etcd
         }
     }
 
+    /**
+     * 处理 Go 客户端协议响应。
+     *
+     * 只有 PONG 或 method/code 合法的 register/discovery 响应才能更新活跃时间；
+     * 无效帧既不刷新 watchdog，也不修改注册状态。
+     *
+     * @return void
+     */
     protected function wsOnMessage(AsyncTcpConnection $connection, $data)
     {
         if (!$this->isCurrentConnection($connection)) {
@@ -577,7 +696,12 @@ class Etcd
     }
 
     /**
-     * @throws \Exception
+     * 启动 Go 进程监控并创建唯一 WebSocket 连接。
+     *
+     * 所有回调共享同一 connection 身份校验，断线后使用 native reconnect
+     * 保留回调，再由 companion Timer 在实际重连时启动建连 watchdog。
+     *
+     * @return void
      */
     public function onWorkerStart()
     {
@@ -631,6 +755,14 @@ class Etcd
         }
     }
 
+    /**
+     * 停止当前 Worker 的连接状态机。
+     *
+     * 顺序不可改为：stopping=true -> 清 package Timer -> cancel native reconnect -> close。
+     * 先将 stopping 置为 true，才能保证 close 同步触发 onClose 时不会复活连接。
+     *
+     * @return void
+     */
     public function onWorkerStop()
     {
         $this->stopping = true;
