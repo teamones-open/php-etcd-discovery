@@ -32,7 +32,7 @@ composer require teamones/etcd-discovery
 belong_system='project'
 
 # etcd服务地址
-etcd_host=10.168.30.25:2379 
+etcd_host=10.168.30.25:2379
 
 # webman 服务端口
 host_port=8080
@@ -49,7 +49,11 @@ return [
         'server_uuid' => \Webpatser\Uuid\Uuid::generate()->string,
         'server_port' => env("host_port", 8080),
         'discovery_name' => ['im', 'saas', 'log', 'media'], // 要发现的服务名
-        'log' => runtime_path() . '/logs/etcd.log', 
+        'legacy_cache_write' => false, // 全量升级默认关闭；仅在旧新 Worker 共存时临时开启。
+        'cache_ttl' => 5, // 每个被发现服务独立缓存的有效期（秒）
+        'request_timeout' => 5000, // HTTP 总超时（毫秒）
+        'connect_timeout' => 500, // HTTP 连接超时（毫秒）
+        'log' => runtime_path() . '/logs/etcd.log',
         'cache' => runtime_path() . '/logs'
     ]
 ];
@@ -103,5 +107,3 @@ $data = Request::connection()
             ->setMethod('POST') // 请求方式
             ->request();
 ```
-
-

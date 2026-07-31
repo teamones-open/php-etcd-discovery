@@ -21,10 +21,14 @@ return [
         'etcd_host' => '10.168.30.25:2379',
         'server_name' => 'teamones_saas',
         'server_uuid' => \Webpatser\Uuid\Uuid::generate()->string,
-        'http_server_port' => 8080,
+        'server_port' => 8080,
         'rpc_server_port' => 8083,
         'service_namespace' => "\\common\\service\\",
         'discovery_name' => ['teamones_im', 'teamones_log'],
+        // 全量升级保持关闭；只有旧新 PHP Worker 共存时临时开启。
+        'legacy_cache_write' => false,
+        // 每个被发现服务的独立 Redis 缓存有效期（秒）。
+        'cache_ttl' => 5,
         // 单位为毫秒；未配置时保持原有的 30000/500 默认值。
         'request_timeout' => 5000,
         'connect_timeout' => 500,

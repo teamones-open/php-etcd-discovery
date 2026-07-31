@@ -14,6 +14,7 @@
         "workerman/workerman": "^4.0.4",
         "illuminate/redis": "~8.20",
         "teamones/log": ">=0.0.1",
+        "teamones/http": "^0.0.4",
         "teamones/json-rpc": ">=0.0.1",
         "ark/filecache": "^0.1.0",
         "leocarmo/circuit-breaker-php": "^3.0"
@@ -22,6 +23,13 @@
         "psr-4": {
             "teamones\\": "src/"
         }
+    },
+    "scripts": {
+        "test": [
+            "@php tests/DiscoveryCacheTest.php",
+            "@php tests/CurlTest.php",
+            "@php tests/EtcdLifecycleTest.php"
+        ]
     },
     "bin": ["bin/php_etcd_client"]
 }

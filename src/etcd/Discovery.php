@@ -3,17 +3,38 @@
 namespace teamones\etcd;
 
 use teamones\cache\Client;
+use teamones\Log;
 
 class Discovery
 {
+    protected const DEFAULT_CACHE_TTL = 5;
+
     /**
      * @var object 对象实例
      */
     protected static $instance = null;
 
 
-    // cache key
-    protected static $cacheKey = '';
+    /**
+     * Cache key prefix scoped to the current consumer instance.
+     *
+     * @var string
+     */
+    protected $cacheKeyPrefix = '';
+
+    /** @var string */
+    protected $legacyCacheKey = '';
+
+    /**
+     * Keep old workers alive during a rolling upgrade. New workers never read
+     * this aggregate key because its entries do not have independent ages.
+     *
+     * @var bool
+     */
+    protected $legacyCacheWrite = false;
+
+    /** @var int */
+    protected $cacheTtl = self::DEFAULT_CACHE_TTL;
 
 
     // 注册参数
@@ -28,17 +49,33 @@ class Discovery
      */
     public function __construct()
     {
-        $uuid = Registry::$serverUUID;
-        if (!empty($uuid)) {
-            self::$cacheKey = "etcd_discovery" . $uuid;
-        } else {
-            // 从配置获取
-            $config = config('etcd', []);
-            if (!isset($config['discovery'])) {
-                throw new \RuntimeException("Etcd connection discovery not found");
-            }
-            self::$cacheKey = "etcd_discovery" . $config['discovery']["server_uuid"];
+        $config = config('etcd', []);
+        if (!is_array($config)
+            || !isset($config['discovery'])
+            || !is_array($config['discovery'])
+        ) {
+            throw new \RuntimeException("Etcd connection discovery not found");
         }
+        $discoveryConfig = $config['discovery'];
+
+        $uuid = Registry::$serverUUID;
+        if (empty($uuid)) {
+            $uuid = $discoveryConfig['server_uuid'] ?? '';
+        }
+
+        if (empty($uuid)) {
+            throw new \RuntimeException("Etcd discovery server_uuid not found");
+        }
+
+        $this->legacyCacheKey = "etcd_discovery" . $uuid;
+        $this->cacheKeyPrefix = $this->legacyCacheKey . ':v2:';
+        $this->cacheTtl = $this->normalizeCacheTtl(
+            $discoveryConfig['cache_ttl'] ?? self::DEFAULT_CACHE_TTL
+        );
+        $this->legacyCacheWrite = $this->normalizeBoolean(
+            $discoveryConfig['legacy_cache_write'] ?? false,
+            false
+        );
     }
 
     /**
@@ -83,17 +120,26 @@ class Discovery
      */
     public function refreshCache($name, $discoveryData = [])
     {
-        $cache = Client::get(self::$cacheKey);
-
-        if (empty($cache) && !isset($cache)) {
-            $cacheArray = [];
-        }else{
-            $cacheArray = json_decode($cache, true);
+        if ($name === '') {
+            return;
         }
 
-        $cacheArray[$name] = $discoveryData;
+        $cacheValue = json_encode($discoveryData);
+        if ($cacheValue === false) {
+            throw new \RuntimeException("Etcd discovery cache encode failed");
+        }
 
-        Client::set(self::$cacheKey, json_encode($cacheArray), 'EX', 5);
+        // One key per service gives every discovery result an independent TTL
+        // and avoids lost updates from concurrent read-modify-write operations.
+        Client::set($this->serviceCacheKey($name), $cacheValue, 'EX', $this->cacheTtl);
+
+        if ($this->legacyCacheWrite) {
+            try {
+                $this->refreshLegacyCache($name, $discoveryData);
+            } catch (\Throwable $e) {
+                $this->logLegacyCacheFailure($e);
+            }
+        }
     }
 
     /**
@@ -103,14 +149,98 @@ class Discovery
      */
     public function getServerConfigByName($name)
     {
-        $cache = Client::get(self::$cacheKey);
+        if ($name === '') {
+            return [];
+        }
 
-        if (!empty($cache)) {
-            $cacheArray = json_decode($cache, true);
-            if (array_key_exists($name, $cacheArray)) {
-                return $cacheArray[$name];
+        $cacheKey = $this->serviceCacheKey($name);
+        $cache = Client::get($cacheKey);
+        if ($cache === false || $cache === null || $cache === '') {
+            return [];
+        }
+
+        $serverConfig = json_decode($cache, true);
+        if (!is_array($serverConfig)) {
+            Client::del($cacheKey);
+            return [];
+        }
+
+        return $serverConfig;
+    }
+
+    protected function serviceCacheKey($name)
+    {
+        return $this->cacheKeyPrefix . hash('sha256', (string)$name);
+    }
+
+    protected function refreshLegacyCache($name, array $discoveryData)
+    {
+        $cache = Client::get($this->legacyCacheKey);
+        $cacheArray = is_string($cache) ? json_decode($cache, true) : [];
+        if (!is_array($cacheArray)) {
+            $cacheArray = [];
+        }
+
+        $cacheArray[$name] = $discoveryData;
+        $cacheValue = json_encode($cacheArray);
+        if ($cacheValue === false) {
+            throw new \RuntimeException("Etcd legacy discovery cache encode failed");
+        }
+
+        Client::set($this->legacyCacheKey, $cacheValue, 'EX', $this->cacheTtl);
+    }
+
+    protected function logLegacyCacheFailure(\Throwable $exception)
+    {
+        $message = 'Etcd legacy discovery cache write failed: ' . $exception->getMessage();
+
+        try {
+            $logger = Log::channel();
+            if (is_object($logger) && is_callable([$logger, 'error'])) {
+                $logger->error($message);
+                return;
+            }
+        } catch (\Throwable $loggingException) {
+            // Logging must never turn an optional compatibility write into a
+            // failure of the primary v2 discovery cache.
+        }
+
+        error_log($message);
+    }
+
+    protected function normalizeCacheTtl($value)
+    {
+        if (is_int($value)) {
+            $ttl = $value;
+        } elseif (is_string($value) && preg_match('/^[0-9]+$/D', trim($value)) === 1) {
+            $ttl = (int)trim($value);
+        } else {
+            return self::DEFAULT_CACHE_TTL;
+        }
+
+        return $ttl > 0 ? $ttl : self::DEFAULT_CACHE_TTL;
+    }
+
+    protected function normalizeBoolean($value, $default)
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value)) {
+            return $value === 1 ? true : ($value === 0 ? false : $default);
+        }
+
+        if (is_string($value)) {
+            $value = strtolower(trim($value));
+            if (in_array($value, ['1', 'true', 'on', 'yes'], true)) {
+                return true;
+            }
+            if (in_array($value, ['0', 'false', 'off', 'no'], true)) {
+                return false;
             }
         }
-        return [];
+
+        return $default;
     }
 }
