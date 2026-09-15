@@ -55,7 +55,7 @@ class EtcdGoServer
     public static function exec()
     {
         return self::withProcessLock(function () {
-            $pid = (int)self::instance()->get(self::$phpEtcdClientPIDKey);
+            $pid = self::cachedPid();
             if (self::isManagedProcess($pid)) {
                 return true;
             }
@@ -81,7 +81,7 @@ class EtcdGoServer
     public static function restart()
     {
         return self::withProcessLock(function () {
-            $pid = (int)self::instance()->get(self::$phpEtcdClientPIDKey);
+            $pid = self::cachedPid();
             if (!self::isManagedProcess($pid)) {
                 $pid = self::findManagedProcess();
             }
@@ -105,7 +105,7 @@ class EtcdGoServer
     public static function kill()
     {
         return self::withProcessLock(function () {
-            $pid = (int)self::instance()->get(self::$phpEtcdClientPIDKey);
+            $pid = self::cachedPid();
             self::instance()->delete(self::$phpEtcdClientPIDKey);
             if (!self::isManagedProcess($pid)) {
                 $pid = self::findManagedProcess();
@@ -125,6 +125,26 @@ class EtcdGoServer
             }
             return $stopped;
         });
+    }
+
+    /**
+     * 读取已持久化的 Go 客户端 PID。
+     *
+     * ark/filecache 在 Key 不存在时会尝试 fopen() 分片路径。Workerman 的
+     * 错误处理器仍可能记录该被 `@` 抑制的预期警告，因此先判断文件是否存在。
+     * 本方法在进程锁内调用，不会与本组件自身的 set/delete 并发。
+     *
+     * @return int 缓存缺失或无效时返回 0
+     */
+    protected static function cachedPid()
+    {
+        $cache = self::instance();
+        $cachePath = $cache->getPath(self::$phpEtcdClientPIDKey);
+        if (!is_file($cachePath)) {
+            return 0;
+        }
+
+        return (int)$cache->get(self::$phpEtcdClientPIDKey);
     }
 
     /**

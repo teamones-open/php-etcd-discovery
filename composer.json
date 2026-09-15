@@ -28,6 +28,7 @@
         "test": [
             "@php tests/DiscoveryCacheTest.php",
             "@php tests/CurlTest.php",
+            "@php tests/EtcdGoServerCacheTest.php",
             "@php tests/EtcdLifecycleTest.php"
         ]
     },
