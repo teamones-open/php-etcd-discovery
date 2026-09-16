@@ -130,9 +130,10 @@ class EtcdGoServer
     /**
      * 读取已持久化的 Go 客户端 PID。
      *
-     * ark/filecache 在 Key 不存在时会尝试 fopen() 分片路径。Workerman 的
+     * ark/filecache 在 Key 不存在时会尝试 fopen() 分片路径。应用自定义的
      * 错误处理器仍可能记录该被 `@` 抑制的预期警告，因此先判断文件是否存在。
-     * 本方法在进程锁内调用，不会与本组件自身的 set/delete 并发。
+     * 本方法在进程锁内调用，不会与本组件自身的 set/delete 并发；
+     * 但应用外部仍可能清理 runtime/cache，因此先清除长驻进程的 stat 缓存，再防御检查后的删除竞态。
      *
      * @return int 缓存缺失或无效时返回 0
      */
@@ -140,11 +141,78 @@ class EtcdGoServer
     {
         $cache = self::instance();
         $cachePath = $cache->getPath(self::$phpEtcdClientPIDKey);
+        clearstatcache(true, $cachePath);
         if (!is_file($cachePath)) {
             return 0;
         }
 
-        return (int)$cache->get(self::$phpEtcdClientPIDKey);
+        $value = self::readExistingCacheValue(
+            $cache,
+            self::$phpEtcdClientPIDKey,
+            $cachePath
+        );
+        // 损坏的 JSON（数组、布尔值等）不能被强转为 PID 1；兼容历史数字字符串。
+        if (!is_int($value) && !is_string($value)) {
+            return 0;
+        }
+
+        $pid = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        return $pid === false ? 0 : $pid;
+    }
+
+    /**
+     * 读取已确认存在的 FileCache 值，并将读取瞬间的 ENOENT 视为缓存未命中。
+     *
+     * 只处理 fopen/file_get_contents 对精确 PID 缓存路径的 ENOENT，兼容库的两次文件读取。
+     * 仅消化预期的 E_WARNING；其他错误交还原处理器，保留其返回值及异常，finally 恢复处理器。
+     * 返回 true 的已处理告警不会成为新的 error_get_last()，无需清除可能属于业务代码的旧错误。
+     *
+     * @param FileCache $cache
+     * @param string $key
+     * @param string $cachePath
+     * @return mixed
+     */
+    protected static function readExistingCacheValue(FileCache $cache, $key, $cachePath)
+    {
+        $previousHandler = null;
+        $missing = false;
+        $readPrefixes = ['fopen(' . $cachePath . '): ', 'file_get_contents(' . $cachePath . '): '];
+        $previousHandler = set_error_handler(
+            static function ($severity, $message, $file, $line, ...$context) use (
+                &$previousHandler,
+                &$missing,
+                $readPrefixes
+            ) {
+                if ($severity === E_WARNING) {
+                    foreach ($readPrefixes as $prefix) {
+                        if (strpos($message, $prefix) === 0
+                            && strcasecmp(substr($message, strlen($prefix)),
+                                'failed to open stream: No such file or directory') === 0
+                        ) {
+                            $missing = true;
+                            return true;
+                        }
+                    }
+                }
+
+                if (is_callable($previousHandler)) {
+                    return call_user_func_array(
+                        $previousHandler,
+                        array_merge([$severity, $message, $file, $line], $context)
+                    );
+                }
+
+                return false;
+            }
+        );
+
+        try {
+            $value = $cache->get($key);
+            return $missing ? false : $value;
+        } finally {
+            restore_error_handler();
+            clearstatcache(true, $cachePath);
+        }
     }
 
     /**
