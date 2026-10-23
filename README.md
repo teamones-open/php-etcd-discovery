@@ -1,7 +1,7 @@
 # php-etcd-discovery
 
-[![Php Version](https://img.shields.io/badge/php-%3E=7.4-brightgreen.svg)](https://secure.php.net/)
-[![Workerman Version](https://img.shields.io/badge/workerman-%3E=4.0.19-brightgreen.svg)](https://github.com/walkor/Workerman)
+[![Php Version](https://img.shields.io/badge/php-%3E=8.1-brightgreen.svg)](https://secure.php.net/)
+[![Workerman Version](https://img.shields.io/badge/workerman-%3E=5.1-brightgreen.svg)](https://github.com/walkor/Workerman)
 [![imi License](https://img.shields.io/badge/license-Apache%202.0-brightgreen.svg)](https://github.com/cgpipline/strack/blob/master/LICENSE)
 
 
@@ -21,6 +21,20 @@ PHP版本，基于Workerman的ETCD服务注册和发现
 ```
 composer require teamones/etcd-discovery
 ```
+
+# 版本兼容
+
+| 版本 | PHP | Workerman | illuminate/redis | 说明 |
+| --- | --- | --- | --- | --- |
+| 3.x | >= 8.1 | ^5.1 | ^10.0 \|\| ^11.0 \|\| ^12.0 | 适配 webman 2.x / PHP 8.5 |
+| 2.x | >= 7.4 | ^4.0.4 | ~8.20 | 兼容 webman 1.x，后续只做缺陷修复 |
+
+从 2.x 升级到 3.x 的变更点：
+
+- 不再支持 PHP 7.4 / 8.0，最低 PHP 8.1；Workerman 最低 5.1。
+- `illuminate/redis` 主版本从 8 提升到 10/11/12。`Illuminate\Redis\RedisManager` 的构造签名（`$app, $driver, $config`）与 `Connections\Connection` 的魔术调用在 10–12 中保持不变，因此 `teamones\cache\Client` 与 `teamones\breaker\RedisAdapter` 的调用方式无需改动。
+- 内部所用 Workerman API（`AsyncTcpConnection` 的 `connect/reconnect/cancelReconnect/getStatus`、`Timer::add/del`、`onMessage/onError/onClose/onWebSocketConnect`）在 5.1+ 中均保留，协程模式为可选能力，本组件按非协程方式运行。
+- 配置项与 `config-example.php` 未变更，2.x 的 `config/etcd.php` 可直接沿用。
 
 # 配合 webman 框架使用说明
 
