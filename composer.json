@@ -14,7 +14,7 @@
         "workerman/workerman": "^5.1",
         "illuminate/redis": "^10.0 || ^11.0 || ^12.0",
         "teamones/log": ">=0.0.1",
-        "teamones/http": "^0.0.4",
+        "teamones/http": "^3.0",
         "teamones/json-rpc": ">=0.0.1",
         "ark/filecache": "^0.1.0",
         "leocarmo/circuit-breaker-php": "^3.0"
